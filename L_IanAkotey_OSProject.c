@@ -17,7 +17,7 @@
 #include <string.h>
 // #include <sys/stat.h>
 // #include <sys/types.h>
-// #include <sys/wait.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #pragma endregion
 
@@ -230,10 +230,14 @@ command *createCommand( const char *string, const char *delimiter ) {
     while ( ( token = strtok( NULL, delimiter ) ) != NULL ) {
         tokenNumber++;
     }
+    tokenNumber += 2; // One, for the name of the command itself, and one for NULL at the end.
 
     currentCommand->params = calloc( 1, sizeof( token_t ) );
     currentCommand->params->tokens = calloc( tokenNumber, sizeof( char * ) );
-    int lastTokenIndex = 0;
+    currentCommand->params->tokens[0] = calloc(strlen(currentCommand->name), sizeof(char));
+    strcpy(currentCommand->params->tokens[0] , currentCommand->name);
+    currentCommand->params->size = 1;
+    int lastTokenIndex = 1;
 
     strcpy( cloned_string, string );
 
@@ -261,6 +265,8 @@ command *createCommand( const char *string, const char *delimiter ) {
         }
 
     }
+
+    currentCommand->params->tokens[lastTokenIndex] = NULL;
 
     return currentCommand;
 }
@@ -356,4 +362,30 @@ int handleOtherCommand( command *otherCommand ) {
 int executeCommand( command *command ) {
     printf( "Executing %s\t", command->name );
     printTokens( command->params );
+
+    int childProcessPID = fork( );
+    if ( childProcessPID == -1 ) {
+        perror( "Failed to create command process" );
+
+    } else if ( childProcessPID == 0 ) {
+        int outputFile = open(command->redirectFile, "w");
+        if ( command->redirect ) {
+            // point Stderr and Strdout to outputFile
+            dup2( outputFile, STDOUT_FILENO );
+            dup2( outputFile, STDERR_FILENO );
+        }
+
+        execv( command->name, command->params->tokens );
+        pass;
+        // int execv( const char *path, char *const argv [] );
+        
+
+    } else {
+        wait( NULL );
+    }
+
+    return 0;
+
+
+
 }
