@@ -266,7 +266,7 @@ command *createCommand( const char *string, const char *delimiter ) {
 }
 
 void printTokens( token_t *tokens ) {
-    printf( "\n" );
+
     for ( int index = 0; index < tokens->size; index++ ) {
         printf( "%s\t", tokens->tokens[index] );
     }
@@ -327,7 +327,6 @@ int handleOtherCommand( command *otherCommand ) {
     // Step 1: Check if the program works without using path
     if ( access( otherCommand->name, F_OK ) == 0 ) {
         char *tmp = otherCommand->name;free( tmp ); tmp = NULL;
-        otherCommand->name = fullPath;
         executeCommand( otherCommand );
         return 0;
 
@@ -355,5 +354,6 @@ int handleOtherCommand( command *otherCommand ) {
 }
 
 int executeCommand( command *command ) {
-    printf( "Executing %s\n", command->name );
+    printf( "Executing %s\t", command->name );
+    printTokens( command->params );
 }
