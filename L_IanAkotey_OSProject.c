@@ -57,7 +57,7 @@ int handleCommand( const char *command );
 command *createCommand( const char *string, const char *delimiter );
 bool isBuiltIn( const char *command );
 int handleBuiltInCommand( command *builtInCommand );
-int handleUserCommand( command *userCommand );
+int handleOtherCommand( command *otherCommand );
 void printTokens( token_t *tokens );
 int updatePath( command *updatePath );
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand );
@@ -191,8 +191,8 @@ int handleCommand( const char *commandString ) {
         printf( "Built-Command passed\n" );
         handleBuiltInCommand( currentCommand );
     } else {
-        printf( "User defined command passed\n" );
-        handleUserCommand( currentCommand );
+        printf( "Other defined command passed\n" );
+        handleOtherCommand( currentCommand );
     }
 }
 
@@ -284,11 +284,12 @@ int handleBuiltInCommand( command *command ) {
     } else if ( !strcmp( command->name, "printpath" ) ) {
         printTokens( systemPath );
     } else if ( !strcmp( command->name, "pcwd" ) ) {
-        char *cwd = malloc( sizeof( char ) * MAX_DIRECTORY_LENGTH ); // ! magic numbers, bit It's a dev only feature so...
+        char *cwd = malloc( sizeof( char ) * MAX_DIRECTORY_LENGTH ); // ! magic numbers, but It's a dev only feature so...
         if ( getcwd( cwd, MAX_DIRECTORY_LENGTH ) != NULL )
             printf( "current working directory is: %s\n", cwd );
     }
 }
+
 int updatePath( command *updateCommand ) {
 
     if ( updateCommand != NULL ) {
@@ -319,11 +320,11 @@ int changeCurrentDirectory( command *changeCurrentDirectoryCommand ) {
 #pragma endregion
 
 
-int handleUserCommand( command *userCommand ) {
+int handleOtherCommand( command *otherCommand ) {
     // TODO Implement
 
     // Step 1: Check if the program works without using path
-    if ( access( userCommand->name, F_OK ) == 0 ) {
+    if ( access( otherCommand->name, F_OK ) == 0 ) {
         printf( "Accessibly without system path\n" );
         return 0;
 
@@ -331,10 +332,10 @@ int handleUserCommand( command *userCommand ) {
         // Search for the program in the system path
 
         for ( int i = 0; i < systemPath->size; i++ ) {
-            char *fullPath = calloc( strlen( systemPath->tokens[i] ) + strlen( userCommand->name ) + 2, sizeof( char ) );
+            char *fullPath = calloc( strlen( systemPath->tokens[i] ) + strlen( otherCommand->name ) + 2, sizeof( char ) );
             strcpy( fullPath, systemPath->tokens[i] );
             strcat( fullPath, "/" );
-            strcat( fullPath, userCommand->name );
+            strcat( fullPath, otherCommand->name );
             if ( access( fullPath, F_OK ) == 0 ) {
                 printf( "Accessible in %s\n", fullPath );
                 return 0;
@@ -343,7 +344,7 @@ int handleUserCommand( command *userCommand ) {
 
     }
 
-    printf( "Command/Executable %s not found.\n", userCommand->name );
+    printf( "Command/Executable %s not found.\n", otherCommand->name );
     return 1;
 
 }
