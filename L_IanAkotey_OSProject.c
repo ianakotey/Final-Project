@@ -61,6 +61,7 @@ int handleOtherCommand( command *otherCommand );
 void printTokens( token_t *tokens );
 int updatePath( command *updatePath );
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand );
+int executeCommand( command *command );
 #pragma endregion
 
 
@@ -325,7 +326,9 @@ int handleOtherCommand( command *otherCommand ) {
 
     // Step 1: Check if the program works without using path
     if ( access( otherCommand->name, F_OK ) == 0 ) {
-        printf( "Accessibly without system path\n" );
+        char *tmp = otherCommand->name;free( tmp ); tmp = NULL;
+        otherCommand->name = fullPath;
+        executeCommand( otherCommand );
         return 0;
 
     } else {
@@ -337,7 +340,9 @@ int handleOtherCommand( command *otherCommand ) {
             strcat( fullPath, "/" );
             strcat( fullPath, otherCommand->name );
             if ( access( fullPath, F_OK ) == 0 ) {
-                printf( "Accessible in %s\n", fullPath );
+                char *tmp = otherCommand->name;free( tmp ); tmp = NULL;
+                otherCommand->name = fullPath;
+                executeCommand( otherCommand );
                 return 0;
             }
         }
@@ -347,4 +352,8 @@ int handleOtherCommand( command *otherCommand ) {
     printf( "Command/Executable %s not found.\n", otherCommand->name );
     return 1;
 
+}
+
+int executeCommand( command *command ) {
+    printf( "Executing %s\n", command->name );
 }
