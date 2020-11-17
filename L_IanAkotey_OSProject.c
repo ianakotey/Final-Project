@@ -6,7 +6,7 @@
 */
 
 #pragma region Library headers
-// #include <fcntl.h>
+#include <fcntl.h>
 #include <regex.h>
 // #include <pthread.h>
 // #include <semaphore.h>
@@ -15,8 +15,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-// #include <sys/stat.h>
-// #include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #pragma endregion
@@ -234,8 +234,8 @@ command *createCommand( const char *string, const char *delimiter ) {
 
     currentCommand->params = calloc( 1, sizeof( token_t ) );
     currentCommand->params->tokens = calloc( tokenNumber, sizeof( char * ) );
-    currentCommand->params->tokens[0] = calloc(strlen(currentCommand->name), sizeof(char));
-    strcpy(currentCommand->params->tokens[0] , currentCommand->name);
+    currentCommand->params->tokens[0] = calloc( strlen( currentCommand->name ), sizeof( char ) );
+    strcpy( currentCommand->params->tokens[0], currentCommand->name );
     currentCommand->params->size = 1;
     int lastTokenIndex = 1;
 
@@ -300,7 +300,7 @@ int handleBuiltInCommand( command *command ) {
 int updatePath( command *updateCommand ) {
 
     if ( updateCommand != NULL ) {
-        // Cleanup old path
+        // ! Cleanup old path: Providing possible memory leak. To be investigated.
         // for ( int index = 0; index < systemPath->size; index++ )
         //     free( systemPath->tokens[index] );
 
@@ -332,7 +332,6 @@ int handleOtherCommand( command *otherCommand ) {
 
     // Step 1: Check if the program works without using path
     if ( access( otherCommand->name, F_OK ) == 0 ) {
-        char *tmp = otherCommand->name;free( tmp ); tmp = NULL;
         executeCommand( otherCommand );
         return 0;
 
@@ -368,9 +367,9 @@ int executeCommand( command *command ) {
         perror( "Failed to create command process" );
 
     } else if ( childProcessPID == 0 ) {
-        int outputFile = open(command->redirectFile, "w");
+        int outputFile = open( command->redirectFile, O_CREAT | O_WRONLY );
         if ( command->redirect ) {
-            // point Stderr and Strdout to outputFile
+            // point Stderr and Stdout to outputFile
             dup2( outputFile, STDOUT_FILENO );
             dup2( outputFile, STDERR_FILENO );
         }
@@ -378,7 +377,7 @@ int executeCommand( command *command ) {
         execv( command->name, command->params->tokens );
         pass;
         // int execv( const char *path, char *const argv [] );
-        
+
 
     } else {
         wait( NULL );
