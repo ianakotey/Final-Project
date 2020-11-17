@@ -36,16 +36,22 @@
     Useful for system path and command parameters.
 */
 typedef struct __token_t {
-    int size;
+    size_t size;
     char **tokens;
 } token_t;
 // Structure for a command
 typedef struct __command {
     char *name;
     bool redirect;
+    bool builtin;
     char *redirectFile;
     token_t *params;
 } command;
+// Structure for a set of commands
+typedef struct __commands {
+    size_t size;
+    command *commands;
+} commands;
 #pragma endregion
 
 
@@ -53,11 +59,11 @@ typedef struct __command {
 static inline int setupDefaultEnvironment( void );
 int batchMode( const char *fileName );
 int interactiveMode( void );
-int handleCommand( const char *command );
+int handleCommands( const char *commandString );
 command *createCommand( const char *string, const char *delimiter );
 bool isBuiltIn( const char *command );
-int handleBuiltInCommand( command *builtInCommand );
-int handleOtherCommand( command *otherCommand );
+void *handleBuiltInCommand( void *builtInCommand );
+void *handleOtherCommand( void *otherCommand );
 void printTokens( token_t *tokens );
 int updatePath( command *updatePath );
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand );
@@ -149,7 +155,7 @@ int batchMode( const char *fileName ) {
     ssize_t lineSize = 0;
 
     while ( ( lineSize = getline( &lineBuffer, &lineBufferSize, batchFile ) >= 0 ) ) {
-        handleCommand( lineBuffer );
+        handleCommands( lineBuffer );
     }
 
 
@@ -180,21 +186,66 @@ int interactiveMode( void ) {
 
         lineBuffer[strlen( lineBuffer ) - 1] = '\0'; // Strip trailing \n
 
-        handleCommand( lineBuffer );
+        handleCommands( lineBuffer );
     }
 
 }
 
 
-int handleCommand( const char *commandString ) {
-    command *currentCommand = createCommand( commandString, " " );
-    if ( isBuiltIn( commandString ) ) {
-        printf( "Built-Command passed\n" );
-        handleBuiltInCommand( currentCommand );
-    } else {
-        printf( "Other defined command passed\n" );
-        handleOtherCommand( currentCommand );
+int handleCommands( const char *commandString ) {
+    /*
+        This function does two things and I hate it.
+        It first parses all commands into a commands struct,
+        and then spawns threads to handle the commands
+    */
+
+    size_t num_of_commands = 0;
+
+    char *commandStringCopy = calloc( strlen( commandString ), sizeof( char ) );
+    char *commandStringCopyShadow = commandStringCopy; // shadows the pointer above (for freeing sake) 
+
+#pragma region handlecommand.CommandCount
+    strcpy( commandStringCopy, commandString );
+    char *commandFragment; //= strtok( commandStringCopy, "&" );
+    while ( ( commandFragment = strtok_r( commandStringCopy, "&", &commandStringCopy ) ) != NULL ) {
+        num_of_commands++;
     }
+#pragma endregion
+
+    commands *passedCommands = calloc( 1, sizeof( commands ) );
+    passedCommands->size = 0;
+    passedCommands->commands = calloc( num_of_commands, sizeof( command ) );
+
+    commandStringCopy = commandStringCopyShadow; // point back to the original memory location
+    strcpy( commandStringCopy, commandString );
+
+    while ( ( commandFragment = strtok_r( commandStringCopy, "&", &commandStringCopy ) ) != NULL ) {
+
+        passedCommands->commands[passedCommands->size] = *createCommand( commandFragment, " " );
+        passedCommands->commands[passedCommands->size].builtin = isBuiltIn( commandFragment );
+        passedCommands->size++;
+    }
+
+    pthread_t parallel_threads[passedCommands->size];
+    for ( size_t index = 0; index < passedCommands->size; index++ ) {
+        if ( passedCommands->commands[index].builtin == true ) {
+            pthread_create( &parallel_threads[index], NULL,
+                            handleBuiltInCommand, ( void * ) &passedCommands->commands[index] );
+        } else {
+            pthread_create( &parallel_threads[index], NULL,
+                            handleOtherCommand, ( void * ) &passedCommands->commands[index] );
+        }
+
+    }
+
+    for ( size_t index = 0; index < passedCommands->size; index++ ) {
+        pthread_join( parallel_threads[index], NULL );
+    }
+
+
+
+    return 0;
+
 }
 
 bool isBuiltIn( const char *command ) {
@@ -232,6 +283,8 @@ command *createCommand( const char *string, const char *delimiter ) {
     }
     tokenNumber += 2; // One, for the name of the command itself, and one for NULL at the end.
 
+
+    // initialize the command (Due to how most programs work, the first argument is the program itself)
     currentCommand->params = calloc( 1, sizeof( token_t ) );
     currentCommand->params->tokens = calloc( tokenNumber, sizeof( char * ) );
     currentCommand->params->tokens[0] = calloc( strlen( currentCommand->name ), sizeof( char ) );
@@ -258,6 +311,7 @@ command *createCommand( const char *string, const char *delimiter ) {
 
             currentCommand->params->size++;
             lastTokenIndex++;
+
         } else {
             // Setup redirection since the current token seems to be >
             currentCommand->redirect = true;
@@ -281,16 +335,17 @@ void printTokens( token_t *tokens ) {
 }
 
 #pragma region Built Command Handlers
-int handleBuiltInCommand( command *command ) {
-    if ( !strcmp( command->name, "path" ) ) {
-        updatePath( command );
-    } else if ( !strcmp( command->name, "exit" ) ) {
+void *handleBuiltInCommand( void *voidCommand ) {
+    command *builtinCommand = ( command * ) voidCommand;
+    if ( !strcmp( builtinCommand->name, "path" ) ) {
+        updatePath( builtinCommand );
+    } else if ( !strcmp( builtinCommand->name, "exit" ) ) {
         exit( 0 );
-    } else if ( !strcmp( command->name, "cd" ) ) {
-        changeCurrentDirectory( command );
-    } else if ( !strcmp( command->name, "printpath" ) ) {
+    } else if ( !strcmp( builtinCommand->name, "cd" ) ) {
+        changeCurrentDirectory( builtinCommand );
+    } else if ( !strcmp( builtinCommand->name, "printpath" ) ) {
         printTokens( systemPath );
-    } else if ( !strcmp( command->name, "pcwd" ) ) {
+    } else if ( !strcmp( builtinCommand->name, "pcwd" ) ) {
         char *cwd = malloc( sizeof( char ) * MAX_DIRECTORY_LENGTH ); // ! magic numbers, but It's a dev only feature so...
         if ( getcwd( cwd, MAX_DIRECTORY_LENGTH ) != NULL )
             printf( "current working directory is: %s\n", cwd );
@@ -314,12 +369,12 @@ int updatePath( command *updateCommand ) {
 }
 
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand ) {
-    if ( changeCurrentDirectoryCommand->params->size != 1 ) {
-        printf( "Invalid parameter number: %d passed to cd instead of 1", changeCurrentDirectoryCommand->params->size );
+    if ( changeCurrentDirectoryCommand->params->size != 2 ) {
+        printf( "Invalid parameter number: %d passed to cd instead of 1", changeCurrentDirectoryCommand->params->size-1 );
         return 1;
-    } else if ( ( chdir( changeCurrentDirectoryCommand->params->tokens[0] ) ) != 0 ) {
+    } else if ( ( chdir( changeCurrentDirectoryCommand->params->tokens[1] ) ) != 0 ) {
         // printf( "Unable to change current directory to %s\n", changeCurrentDirectoryCommand->params->tokens[0] );
-        perror( changeCurrentDirectoryCommand->params->tokens[0] );
+        perror( changeCurrentDirectoryCommand->params->tokens[1] );
         return 1;
     } else { return 0; }
 
@@ -327,13 +382,13 @@ int changeCurrentDirectory( command *changeCurrentDirectoryCommand ) {
 #pragma endregion
 
 
-int handleOtherCommand( command *otherCommand ) {
-    // TODO Implement
+void *handleOtherCommand( void *voidCommand ) {
+    command *otherCommand = ( command * ) voidCommand;
 
     // Step 1: Check if the program works without using path
     if ( access( otherCommand->name, F_OK ) == 0 ) {
         executeCommand( otherCommand );
-        return 0;
+        return NULL;
 
     } else {
         // Search for the program in the system path
@@ -347,15 +402,14 @@ int handleOtherCommand( command *otherCommand ) {
                 char *tmp = otherCommand->name;free( tmp ); tmp = NULL;
                 otherCommand->name = fullPath;
                 executeCommand( otherCommand );
-                return 0;
+                return NULL;
             }
         }
 
     }
 
     printf( "Command/Executable %s not found.\n", otherCommand->name );
-    return 1;
-
+    return NULL;
 }
 
 int executeCommand( command *command ) {
@@ -384,7 +438,6 @@ int executeCommand( command *command ) {
     }
 
     return 0;
-
 
 
 }
