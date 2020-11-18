@@ -75,8 +75,8 @@ int executeCommand( command *command );
 token_t *systemPath;
 #pragma endregion
 
-#define DEBUG_MODE_INTERACTIVE // Uncomment to enable interactive debugging mode
-// #define DEBUG_MODE_BATCH    // Uncomment to enable batch debugging mode
+// #define DEBUG_MODE_INTERACTIVE // Uncomment to enable interactive debugging mode
+#define DEBUG_MODE_BATCH    // Uncomment to enable batch debugging mode
 
 
 int main( int argc, char *argv [] ) {
@@ -218,6 +218,9 @@ int handleCommands( const char *commandString ) {
     commandStringCopy = commandStringCopyShadow; // point back to the original memory location
     strcpy( commandStringCopy, commandString );
 
+    commandStringCopy = strtok_r( commandStringCopy, "\r", &commandStringCopy );
+
+
     while ( ( commandFragment = strtok_r( commandStringCopy, "&", &commandStringCopy ) ) != NULL ) {
 
         passedCommands->commands[passedCommands->size] = *createCommand( commandFragment, " " );
@@ -228,7 +231,7 @@ int handleCommands( const char *commandString ) {
     /*
         Spawn threads to execute the commands in parallel.
         I honestly do not favor this and would prefer sequential execution like in a real UNIX shell.
-        The reason is if a command changes directory and a command redirects, 
+        The reason is if a command changes directory and a command redirects,
         or two commands redirect their output, there coould be unwanted behaviour.
         The best I can do is synchronize access to the editing of path or redirection.
 
@@ -260,7 +263,7 @@ bool isBuiltIn( const char *command ) {
     regex_t *commandRegex = calloc( 1, sizeof( regex_t ) );
     int compileStatus = 0;
     // ^(path |cd |exit|printpath|pcwd).*
-    compileStatus = regcomp( commandRegex, "^\\s?(path|path .*|cd|cd .*|exit)\\s*$", REG_EXTENDED|REG_NEWLINE );
+    compileStatus = regcomp( commandRegex, "^\\s*(path|path .*|cd|cd .*|exit)\\s*$", REG_EXTENDED | REG_NEWLINE );
     bool matched;
 
     matched = regexec( commandRegex, command, 0, NULL, 0 );
@@ -352,16 +355,8 @@ void *handleBuiltInCommand( void *voidCommand ) {
         exit( 0 );
     } else if ( !strcmp( builtinCommand->name, "cd" ) ) {
         changeCurrentDirectory( builtinCommand );
-    } 
-    #pragma region  custom builtin commands
-    else if ( !strcmp( builtinCommand->name, "printpath" ) ) {
-        printTokens( systemPath );
-    } else if ( !strcmp( builtinCommand->name, "pcwd" ) ) {
-        char *cwd = malloc( sizeof( char ) * MAX_DIRECTORY_LENGTH ); // ! magic numbers, but It's a dev only feature so...
-        if ( getcwd( cwd, MAX_DIRECTORY_LENGTH ) != NULL )
-            printf( "current working directory is: %s\n", cwd );
     }
-    #pragma endregion
+
 }
 
 int updatePath( command *updateCommand ) {
@@ -382,7 +377,7 @@ int updatePath( command *updateCommand ) {
 
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand ) {
     if ( changeCurrentDirectoryCommand->params->size != 2 ) {
-        printf( "Invalid parameter number: %d passed to cd instead of 1", changeCurrentDirectoryCommand->params->size-1 );
+        printf( "Invalid parameter number: %d passed to cd instead of 1", changeCurrentDirectoryCommand->params->size - 1 );
         return 1;
     } else if ( ( chdir( changeCurrentDirectoryCommand->params->tokens[1] ) ) != 0 ) {
         // printf( "Unable to change current directory to %s\n", changeCurrentDirectoryCommand->params->tokens[0] );
@@ -425,8 +420,10 @@ void *handleOtherCommand( void *voidCommand ) {
 }
 
 int executeCommand( command *command ) {
-    printf( "Executing %s\t", command->name );
-    printTokens( command->params );
+    /*
+        This function executes a command passed.
+    */
+    // printTokens( command->params );
 
     int childProcessPID = fork( );
     if ( childProcessPID == -1 ) {

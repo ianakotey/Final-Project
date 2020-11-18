@@ -54,6 +54,9 @@ dkms.conf
 #temporary files 
 **/temp*
 **/tmp*
+**/test*.bat
+**/test*.txt
+
 
 # Vscode file 
 **/.vscode/*
