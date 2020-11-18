@@ -8,7 +8,7 @@
 #pragma region Library headers
 #include <fcntl.h>
 #include <regex.h>
-// #include <pthread.h>
+#include <pthread.h>
 // #include <semaphore.h>
 #include <stdbool.h>
 // #include <stdint.h>
@@ -164,15 +164,14 @@ int batchMode( const char *fileName ) {
 
 // Function for shell's interactive mode
 int interactiveMode( void ) {
-    printf( "Running in interactive mode\n" );
+    printf( "\nRunning in interactive mode\n" );
 
 
     char *lineBuffer = NULL;
     size_t lineBufferSize = 0;
     ssize_t lineSize = 0;
 
-    printf( "Welcome to wish\nDefault Path:\n" );
-    printTokens( systemPath );
+    printf( "Welcome to wish\n\n" );
 
 
 
@@ -226,6 +225,15 @@ int handleCommands( const char *commandString ) {
         passedCommands->size++;
     }
 
+    /*
+        Spawn threads to execute the commands in parallel.
+        I honestly do not favor this and would prefer sequential execution like in a real UNIX shell.
+        The reason is if a command changes directory and a command redirects, 
+        or two commands redirect their output, there coould be unwanted behaviour.
+        The best I can do is synchronize access to the editing of path or redirection.
+
+    */
+
     pthread_t parallel_threads[passedCommands->size];
     for ( size_t index = 0; index < passedCommands->size; index++ ) {
         if ( passedCommands->commands[index].builtin == true ) {
@@ -251,7 +259,8 @@ int handleCommands( const char *commandString ) {
 bool isBuiltIn( const char *command ) {
     regex_t *commandRegex = calloc( 1, sizeof( regex_t ) );
     int compileStatus = 0;
-    compileStatus = regcomp( commandRegex, "^(path |cd |exit|printpath|pcwd).*", REG_EXTENDED );
+    // ^(path |cd |exit|printpath|pcwd).*
+    compileStatus = regcomp( commandRegex, "^\\s?(path|path .*|cd|cd .*|exit)\\s*$", REG_EXTENDED|REG_NEWLINE );
     bool matched;
 
     matched = regexec( commandRegex, command, 0, NULL, 0 );
@@ -343,13 +352,16 @@ void *handleBuiltInCommand( void *voidCommand ) {
         exit( 0 );
     } else if ( !strcmp( builtinCommand->name, "cd" ) ) {
         changeCurrentDirectory( builtinCommand );
-    } else if ( !strcmp( builtinCommand->name, "printpath" ) ) {
+    } 
+    #pragma region  custom builtin commands
+    else if ( !strcmp( builtinCommand->name, "printpath" ) ) {
         printTokens( systemPath );
     } else if ( !strcmp( builtinCommand->name, "pcwd" ) ) {
         char *cwd = malloc( sizeof( char ) * MAX_DIRECTORY_LENGTH ); // ! magic numbers, but It's a dev only feature so...
         if ( getcwd( cwd, MAX_DIRECTORY_LENGTH ) != NULL )
             printf( "current working directory is: %s\n", cwd );
     }
+    #pragma endregion
 }
 
 int updatePath( command *updateCommand ) {
