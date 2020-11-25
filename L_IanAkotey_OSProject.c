@@ -2,16 +2,16 @@
 /*
     Author: Ian Joseph Ayitey Akotey
     This code uses the #pragma directive to avoid unnecessary commenting,
-    and to group code
+    and to group code in a logical format.
+    * eg. #pragma region DoSomething
+    *     #pragma endregion // This block surrounds a block that 'Does Something'
 */
 
 #pragma region Library headers
 #include <fcntl.h>
 #include <regex.h>
 #include <pthread.h>
-// #include <semaphore.h>
 #include <stdbool.h>
-// #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,17 +28,20 @@
 #define MAX_COMMAND_LENGTH (1024)
 #define MAX_PATH_LENGTH (256)
 #define MAX_DIRECTORY_LENGTH (256)
-#pragma endregion
+#pragma endregion Constant Declarations
 
 #pragma region Struct Declarations
 
 /* Token structure.
     Useful for system path and command parameters.
+    For example, may be used to hold command fragments
+    * eg ['ls', '-la', 'tmp.txt']
 */
 typedef struct __token_t {
     size_t size;
     char **tokens;
 } token_t;
+
 // Structure for a command
 typedef struct __command {
     char *name;
@@ -47,12 +50,13 @@ typedef struct __command {
     char *redirectFile;
     token_t *params;
 } command;
-// Structure for a set of commands
+
+// Structure for a command set
 typedef struct __commands {
     size_t size;
     command *commands;
 } commands;
-#pragma endregion
+#pragma endregion Struct Declarations
 
 
 #pragma region Function Declarations
@@ -68,14 +72,16 @@ void printTokens( token_t *tokens );
 int updatePath( command *updatePath );
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand );
 int executeCommand( command *command );
-#pragma endregion
+#pragma endregion Function Declarations
 
 
 #pragma region Globals
 token_t *systemPath;
-#pragma endregion
+#pragma endregion Globals
 
-// #define DEBUG_MODE_INTERACTIVE // Uncomment to enable interactive debugging mode
+
+// Comment or uncomment both for normal operation
+#define DEBUG_MODE_INTERACTIVE // Uncomment to enable interactive debugging mode
 #define DEBUG_MODE_BATCH    // Uncomment to enable batch debugging mode
 
 
@@ -91,22 +97,19 @@ int main( int argc, char *argv [] ) {
         This is to avoid issues with debuggers attaching additional parameters to the process
     */
 #pragma region Mode Selector
-#ifdef DEBUG_MODE_INTERACTIVE
+
+#if !defined(DEBUG_MODE_BATCH) && defined(DEBUG_MODE_INTERACTIVE)
+    printf( "In interactive debug Mode:.............\n" );
     interactiveMode( );
-#endif
 
-#ifdef  DEBUG_MODE_BATCH
-#ifndef DEBUG_MODE_INTERACTIVE
+#elif defined(DEBUG_MODE_BATCH) && !defined(DEBUG_MODE_INTERACTIVE)
+    printf( "In batch debug Mode:.............\n" );
     batchMode( argv[1] );
-#endif
-#endif
-
-#ifndef DEBUG_MODE_INTERACTIVE
-#ifndef  DEBUG_MODE_BATCH
+#else
     argc == 1 ? interactiveMode( ) : ( argc == 2 ? batchMode( argv[1] ) : printf( "Only one file is needed to call shell.\n" ) );
 #endif
-#endif
-#pragma endregion
+
+#pragma endregion Mode Selector
 
     return 0;
 }
@@ -155,9 +158,9 @@ int batchMode( const char *fileName ) {
     ssize_t lineSize = 0;
 
     while ( ( lineSize = getline( &lineBuffer, &lineBufferSize, batchFile ) >= 0 ) ) {
+        lineBuffer = strtok_r( lineBuffer, "\r\n", &lineBuffer );
         handleCommands( lineBuffer );
     }
-
 
 
 }
@@ -195,7 +198,10 @@ int handleCommands( const char *commandString ) {
     /*
         This function does two things and I hate it.
         It first parses all commands into a commands struct,
-        and then spawns threads to handle the commands
+        and then spawns threads to handle the commands,
+        but this is the most intuitive solution I can come up with ...
+        without changing my call stack, which is long enough as-is.
+        I've therefore segmented it into logical pieces for easy reading
     */
 
     size_t num_of_commands = 0;
@@ -203,17 +209,20 @@ int handleCommands( const char *commandString ) {
     char *commandStringCopy = calloc( strlen( commandString ), sizeof( char ) );
     char *commandStringCopyShadow = commandStringCopy; // shadows the pointer above (for freeing sake) 
 
-#pragma region handlecommand.CommandCount
+#pragma region handlecommands.CommandCount
     strcpy( commandStringCopy, commandString );
-    char *commandFragment; //= strtok( commandStringCopy, "&" );
+    char *commandFragment;
     while ( ( commandFragment = strtok_r( commandStringCopy, "&", &commandStringCopy ) ) != NULL ) {
         num_of_commands++;
     }
-#pragma endregion
+#pragma endregion handlecommands.CommandCount
 
+
+#pragma region handlecommands.AllocateCommandsMemory
     commands *passedCommands = calloc( 1, sizeof( commands ) );
     passedCommands->size = 0;
     passedCommands->commands = calloc( num_of_commands, sizeof( command ) );
+#pragma endregion
 
     commandStringCopy = commandStringCopyShadow; // point back to the original memory location
     strcpy( commandStringCopy, commandString );
@@ -221,12 +230,13 @@ int handleCommands( const char *commandString ) {
     commandStringCopy = strtok_r( commandStringCopy, "\r", &commandStringCopy );
 
 
+#pragma region handlecommands.ParseAllCommands
     while ( ( commandFragment = strtok_r( commandStringCopy, "&", &commandStringCopy ) ) != NULL ) {
-
         passedCommands->commands[passedCommands->size] = *createCommand( commandFragment, " " );
         passedCommands->commands[passedCommands->size].builtin = isBuiltIn( commandFragment );
         passedCommands->size++;
     }
+#pragma endregion
 
     /*
         Spawn threads to execute the commands in parallel.
@@ -234,9 +244,12 @@ int handleCommands( const char *commandString ) {
         The reason is if a command changes directory and a command redirects,
         or two commands redirect their output, there coould be unwanted behaviour.
         The best I can do is synchronize access to the editing of path or redirection.
+        ! Edit: This will not work out without blocking other threads,
+        ! so parallel at the expense of unpredictability.
 
     */
 
+#pragma region handlecommands.SpawnThreads
     pthread_t parallel_threads[passedCommands->size];
     for ( size_t index = 0; index < passedCommands->size; index++ ) {
         if ( passedCommands->commands[index].builtin == true ) {
@@ -252,6 +265,7 @@ int handleCommands( const char *commandString ) {
     for ( size_t index = 0; index < passedCommands->size; index++ ) {
         pthread_join( parallel_threads[index], NULL );
     }
+#pragma endregion
 
 
 
@@ -260,9 +274,10 @@ int handleCommands( const char *commandString ) {
 }
 
 bool isBuiltIn( const char *command ) {
+
     regex_t *commandRegex = calloc( 1, sizeof( regex_t ) );
     int compileStatus = 0;
-    // ^(path |cd |exit|printpath|pcwd).*
+
     compileStatus = regcomp( commandRegex, "^\\s*(path|path .*|cd|cd .*|exit)\\s*$", REG_EXTENDED | REG_NEWLINE );
     bool matched;
 
@@ -270,13 +285,14 @@ bool isBuiltIn( const char *command ) {
 
     regfree( commandRegex );
     free( commandRegex );
+
     return ( matched == 0 ) ? true : false;
 
 }
 
 
 command *createCommand( const char *string, const char *delimiter ) {
-    // return a char* array of string parameters splitted by delimiter
+    // return a command* of a command parsed using the delimiter as separator
     char *cloned_string = calloc( strlen( string ), sizeof( char ) );
     strcpy( cloned_string, string );
 
@@ -406,7 +422,6 @@ void *handleOtherCommand( void *voidCommand ) {
             strcat( fullPath, "/" );
             strcat( fullPath, otherCommand->name );
             if ( access( fullPath, F_OK ) == 0 ) {
-                char *tmp = otherCommand->name;free( tmp ); tmp = NULL;
                 otherCommand->name = fullPath;
                 executeCommand( otherCommand );
                 return NULL;
@@ -447,6 +462,5 @@ int executeCommand( command *command ) {
     }
 
     return 0;
-
 
 }
