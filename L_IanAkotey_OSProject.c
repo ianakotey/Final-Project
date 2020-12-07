@@ -71,7 +71,9 @@ void *handleOtherCommand( void *otherCommand );
 void printTokens( token_t *tokens );
 int updatePath( command *updatePath );
 int changeCurrentDirectory( command *changeCurrentDirectoryCommand );
+int builtInExit( command *exitCommand );
 int executeCommand( command *command );
+void printTheirErrorForThem( );
 #pragma endregion Function Declarations
 
 
@@ -81,8 +83,8 @@ token_t *systemPath;
 
 
 // Comment or uncomment both for normal operation
-#define DEBUG_MODE_INTERACTIVE // Uncomment to enable interactive debugging mode
-#define DEBUG_MODE_BATCH    // Uncomment to enable batch debugging mode
+// #define DEBUG_MODE_INTERACTIVE // Uncomment to enable interactive debugging mode
+// #define DEBUG_MODE_BATCH    // Uncomment to enable batch debugging mode
 
 
 int main( int argc, char *argv [] ) {
@@ -111,9 +113,12 @@ int main( int argc, char *argv [] ) {
 
 #pragma endregion Mode Selector
 
-    return 0;
+    return 1;
 }
 
+void printTheirErrorForThem( ) {
+    fprintf( stderr, "An error has occurred\n" );
+}
 
 /* code could have been in main, but this is cleaner */
 static inline int setupDefaultEnvironment( void ) {
@@ -121,10 +126,12 @@ static inline int setupDefaultEnvironment( void ) {
         as well as any other configuration needed
     */
     systemPath = calloc( 1, sizeof( token_t ) );
-    systemPath->tokens = calloc( 1, sizeof( char * ) );
+    systemPath->tokens = calloc( 2, sizeof( char * ) );
     systemPath->tokens[0] = calloc( 5, sizeof( char ) );
-    systemPath->tokens[0] = "/bin";
-    systemPath->size = 1;
+    systemPath->tokens[0] = "path";
+    systemPath->tokens[1] = calloc( 5, sizeof( char ) );
+    systemPath->tokens[1] = "/bin";
+    systemPath->size = 2;
 }
 
 
@@ -150,9 +157,13 @@ size_t countLines( char *fileName ) {
 
 // Function for shell's batch mode
 int batchMode( const char *fileName ) {
-    printf( "Running in batch mode\n" );
 
     FILE *batchFile = fopen( fileName, "r" );
+
+    if ( batchFile == NULL ) {
+        exit( 1 );
+    }
+
     char *lineBuffer = NULL;
     size_t lineBufferSize = 0;
     ssize_t lineSize = 0;
@@ -162,22 +173,18 @@ int batchMode( const char *fileName ) {
         handleCommands( lineBuffer );
     }
 
+    exit( 0 );
 
 }
 
 // Function for shell's interactive mode
 int interactiveMode( void ) {
-    printf( "\nRunning in interactive mode\n" );
-
 
     char *lineBuffer = NULL;
     size_t lineBufferSize = 0;
     ssize_t lineSize = 0;
 
     printf( "Welcome to wish\n\n" );
-
-
-
 
     while ( true ) {
         printf( "\nwish>" );
@@ -187,6 +194,7 @@ int interactiveMode( void ) {
         if ( lineSize == 1 ) { printf( "Empty command!\n" );continue; } // Handle \n
 
         lineBuffer[strlen( lineBuffer ) - 1] = '\0'; // Strip trailing \n
+        lineBuffer = strtok_r( lineBuffer, "\n", &lineBuffer );
 
         handleCommands( lineBuffer );
     }
@@ -266,7 +274,6 @@ int handleCommands( const char *commandString ) {
         pthread_join( parallel_threads[index], NULL );
     }
 #pragma endregion
-
 
 
     return 0;
@@ -363,16 +370,31 @@ void printTokens( token_t *tokens ) {
 }
 
 #pragma region Built Command Handlers
+
+
 void *handleBuiltInCommand( void *voidCommand ) {
     command *builtinCommand = ( command * ) voidCommand;
     if ( !strcmp( builtinCommand->name, "path" ) ) {
         updatePath( builtinCommand );
     } else if ( !strcmp( builtinCommand->name, "exit" ) ) {
-        exit( 0 );
+        builtInExit( builtinCommand );
     } else if ( !strcmp( builtinCommand->name, "cd" ) ) {
         changeCurrentDirectory( builtinCommand );
     }
+#if defined(DEBUG_MODE_BATCH) || defined(DEBUG_MODE_INTERACTIVE)
+    else if ( !strcmp( builtinCommand->name, "printpath" ) ) {
+        printf( "System path: " );
+        for ( size_t index = 1; index < systemPath->size; index++ ) {
+            printf( "\t%s", systemPath->tokens[index] );
+        }
+        printf( "\n" );
+    }
+#endif
 
+}
+
+int builtInExit( command *exitCommand ) {
+    exit( 0 );
 }
 
 int updatePath( command *updateCommand ) {
@@ -396,32 +418,32 @@ int changeCurrentDirectory( command *changeCurrentDirectoryCommand ) {
         printf( "Invalid parameter number: %d passed to cd instead of 1", changeCurrentDirectoryCommand->params->size - 1 );
         return 1;
     } else if ( ( chdir( changeCurrentDirectoryCommand->params->tokens[1] ) ) != 0 ) {
-        // printf( "Unable to change current directory to %s\n", changeCurrentDirectoryCommand->params->tokens[0] );
         perror( changeCurrentDirectoryCommand->params->tokens[1] );
+        printTheirErrorForThem( );
         return 1;
     } else { return 0; }
 
 }
-#pragma endregion
+#pragma endregion  Command Handlers
 
 
 void *handleOtherCommand( void *voidCommand ) {
     command *otherCommand = ( command * ) voidCommand;
 
     // Step 1: Check if the program works without using path
-    if ( access( otherCommand->name, F_OK ) == 0 ) {
+    if ( access( otherCommand->name, X_OK ) == 0 ) {
         executeCommand( otherCommand );
         return NULL;
 
     } else {
         // Search for the program in the system path
 
-        for ( int i = 0; i < systemPath->size; i++ ) {
+        for ( int i = 1; i < systemPath->size; i++ ) {
             char *fullPath = calloc( strlen( systemPath->tokens[i] ) + strlen( otherCommand->name ) + 2, sizeof( char ) );
             strcpy( fullPath, systemPath->tokens[i] );
             strcat( fullPath, "/" );
             strcat( fullPath, otherCommand->name );
-            if ( access( fullPath, F_OK ) == 0 ) {
+            if ( access( fullPath, X_OK ) == 0 ) {
                 otherCommand->name = fullPath;
                 executeCommand( otherCommand );
                 return NULL;
@@ -431,6 +453,7 @@ void *handleOtherCommand( void *voidCommand ) {
     }
 
     printf( "Command/Executable %s not found.\n", otherCommand->name );
+    printTheirErrorForThem( );
     return NULL;
 }
 
@@ -443,6 +466,7 @@ int executeCommand( command *command ) {
     int childProcessPID = fork( );
     if ( childProcessPID == -1 ) {
         perror( "Failed to create command process" );
+        printTheirErrorForThem( );
 
     } else if ( childProcessPID == 0 ) {
         int outputFile = open( command->redirectFile, O_CREAT | O_WRONLY );
@@ -452,9 +476,9 @@ int executeCommand( command *command ) {
             dup2( outputFile, STDERR_FILENO );
         }
 
-        execv( command->name, command->params->tokens );
+        execv( command->name, command->params->tokens ) < 0 ? printTheirErrorForThem( ) : pass;
+
         pass;
-        // int execv( const char *path, char *const argv [] );
 
 
     } else {
