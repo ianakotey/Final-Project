@@ -240,7 +240,7 @@ int handleCommands( const char *commandString ) {
 
 #pragma region handlecommands.ParseAllCommands
     while ( ( commandFragment = strtok_r( commandStringCopy, "&", &commandStringCopy ) ) != NULL ) {
-        passedCommands->commands[passedCommands->size] = *createCommand( commandFragment, " " );
+        passedCommands->commands[passedCommands->size] = *createCommand( commandFragment, " \t" );
         passedCommands->commands[passedCommands->size].builtin = isBuiltIn( commandFragment );
         passedCommands->size++;
     }
@@ -373,6 +373,7 @@ void printTokens( token_t *tokens ) {
 
 
 void *handleBuiltInCommand( void *voidCommand ) {
+    // * Dispatches the correct built in command function
     command *builtinCommand = ( command * ) voidCommand;
     if ( !strcmp( builtinCommand->name, "path" ) ) {
         updatePath( builtinCommand );
@@ -400,10 +401,7 @@ int builtInExit( command *exitCommand ) {
 int updatePath( command *updateCommand ) {
 
     if ( updateCommand != NULL ) {
-        // ! Cleanup old path: Providing possible memory leak. To be investigated.
-        // for ( int index = 0; index < systemPath->size; index++ )
-        //     free( systemPath->tokens[index] );
-
+        // ! Cleanup old path
         free( systemPath->tokens );
         free( systemPath );
 
@@ -418,7 +416,7 @@ int changeCurrentDirectory( command *changeCurrentDirectoryCommand ) {
         printf( "Invalid parameter number: %d passed to cd instead of 1", changeCurrentDirectoryCommand->params->size - 1 );
         return 1;
     } else if ( ( chdir( changeCurrentDirectoryCommand->params->tokens[1] ) ) != 0 ) {
-        perror( changeCurrentDirectoryCommand->params->tokens[1] );
+        // perror( changeCurrentDirectoryCommand->params->tokens[1] );
         printTheirErrorForThem( );
         return 1;
     } else { return 0; }
@@ -452,7 +450,7 @@ void *handleOtherCommand( void *voidCommand ) {
 
     }
 
-    printf( "Command/Executable %s not found.\n", otherCommand->name );
+    // printf( "Command/Executable %s not found.\n", otherCommand->name );
     printTheirErrorForThem( );
     return NULL;
 }
@@ -465,11 +463,11 @@ int executeCommand( command *command ) {
 
     int childProcessPID = fork( );
     if ( childProcessPID == -1 ) {
-        perror( "Failed to create command process" );
+        // perror( "Failed to create command process" );
         printTheirErrorForThem( );
 
     } else if ( childProcessPID == 0 ) {
-        int outputFile = open( command->redirectFile, O_CREAT | O_WRONLY );
+        int outputFile = open( command->redirectFile, O_CREAT | O_WRONLY | O_TRUNC, S_IRWXO | S_IRWXG | S_IRWXO );
         if ( command->redirect ) {
             // point Stderr and Stdout to outputFile
             dup2( outputFile, STDOUT_FILENO );
@@ -483,6 +481,14 @@ int executeCommand( command *command ) {
 
     } else {
         wait( NULL );
+
+        free( command->name ); command->name = NULL;
+        free( command->redirectFile ); command->redirectFile = NULL;
+        free( command->params->tokens ); command->params->tokens = NULL;
+        free( command->params ); command->params = NULL;
+        free( command ); command = NULL;
+
+
     }
 
     return 0;
